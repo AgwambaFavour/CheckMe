@@ -4,7 +4,7 @@ import { db } from "@/lib/supabase/server";
 
 /**
  * Turn a verified sign-up into the organisation + owner account.
- * Only runs when the email is confirmed and no organisation exists yet.
+ * Runs once the email is confirmed. Every setup gets its own organisation.
  */
 export async function completeOwnerSetup(user: User): Promise<"created" | "exists" | "unverified" | "taken"> {
   if (!user.email_confirmed_at) return "unverified";
@@ -12,9 +12,6 @@ export async function completeOwnerSetup(user: User): Promise<"created" | "exist
   const admin = db();
   const { data: existing } = await admin.from("profiles").select("id").eq("id", user.id).maybeSingle();
   if (existing) return "exists";
-
-  const { count } = await admin.from("organizations").select("id", { count: "exact", head: true });
-  if ((count ?? 0) > 0) return "taken"; // someone else finished setup first
 
   const meta = (user.user_metadata ?? {}) as { org_name?: string; full_name?: string };
   const { data: org, error: orgErr } = await admin

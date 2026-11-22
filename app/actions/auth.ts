@@ -52,19 +52,12 @@ export async function signOut() {
   redirect("/login");
 }
 
-export async function isSetupDone() {
-  const { count } = await db().from("organizations").select("id", { count: "exact", head: true });
-  return (count ?? 0) > 0;
-}
-
 /**
- * First-run only. Creates an UNCONFIRMED account and emails a confirmation link.
- * The organisation + owner profile are only created once the link is clicked
- * (see app/auth/confirm/route.ts), proving the email belongs to the person.
+ * Set up a new organisation. Anyone can do this; each organisation only sees its own data.
+ * Creates an UNCONFIRMED account and emails a confirmation code. The organisation + owner
+ * profile are only created once it's confirmed, proving the email belongs to the person.
  */
 export async function setupOwner(_: FormState, formData: FormData): Promise<FormState> {
-  if (await isSetupDone()) return { error: "Setup has already been completed. Please log in." };
-
   const orgName = String(formData.get("org") ?? "").trim();
   const fullName = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -82,6 +75,10 @@ export async function setupOwner(_: FormState, formData: FormData): Promise<Form
     },
   });
   if (error) return { error: emailErrorMessage(error.code, error.message) };
+
+  // Supabase signals "email already registered" by returning a user with no identities.
+  if (data.user && data.user.identities?.length === 0)
+    return { error: "An account with this email already exists. Log in instead." };
 
   // If Supabase returned a session straight away, email confirmation is switched OFF
   // in the project — refuse, because the email would never be verified.
