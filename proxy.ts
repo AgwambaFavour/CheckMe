@@ -25,9 +25,11 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims refreshes the session and verifies the JWT locally when the project uses
+  // asymmetric signing keys, saving a network round trip on every page.
+  // Pages still re-check the user with getUser() via getProfile().
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims?.sub;
 
   if (!user && request.nextUrl.pathname.startsWith("/admin")) {
     const loginUrl = request.nextUrl.clone();
