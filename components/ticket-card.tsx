@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import type { PublicTicket } from "@/lib/public-ticket";
-import { formatDateTime, inkFor } from "@/lib/utils";
+import { formatDateTime, formatNaira, inkFor } from "@/lib/utils";
 
 /** The ticket as guests see it. Used by the public ticket page and the owner's branding preview. */
 export function TicketCard({ t, qrSvg }: { t: PublicTicket; qrSvg: string }) {
@@ -42,6 +42,9 @@ export function TicketCard({ t, qrSvg }: { t: PublicTicket; qrSvg: string }) {
           <div className="text-3xl font-black">
             {t.slots} {t.slots === 1 ? "person" : "people"}
           </div>
+          {t.amount_paid > 0 && (
+            <div className="mt-1 text-sm font-semibold text-neutral-600">{formatNaira(t.amount_paid)} paid</div>
+          )}
         </div>
 
         <div className="relative mx-auto mt-5 w-full max-w-[260px]">

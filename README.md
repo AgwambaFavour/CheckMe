@@ -5,14 +5,18 @@ and scan them at the gate with a phone camera. Each scan shows paid / admitted /
 slots, and lets you admit part of a group now and the rest later.
 
 ## Roles
-- **Owner**: create and edit events, add or remove team members, plus everything an admin can do.
+- **Owner**: create and edit events, set ticket prices, add or remove team members, plus everything an admin can do.
 - **Admin**: create, edit and void tickets, send them on WhatsApp, scan and check people in.
+- **Scanner**: scan tickets and check guests in at the gate. Can search tickets and undo a mistaken check-in,
+  but can't create, edit or void tickets, and doesn't see amounts paid or revenue.
 
 ## First-time setup
 
 1. **Supabase** (free): create a project at https://supabase.com. Pick the region closest to your guests (e.g. *West EU*).
 2. In Supabase, open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql), and click **Run**.
-   Then do the same with [`supabase/002_branding.sql`](supabase/002_branding.sql).
+   Then do the same with [`supabase/002_branding.sql`](supabase/002_branding.sql) and
+   [`supabase/003_scanner_and_prices.sql`](supabase/003_scanner_and_prices.sql), then
+   [`supabase/004_ticket_upgrades.sql`](supabase/004_ticket_upgrades.sql).
 3. Copy `.env.example` to `.env.local` and fill in the values from **Project Settings → API Keys**:
    - `NEXT_PUBLIC_SUPABASE_URL`: the project URL
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: the publishable (or legacy *anon*) key
@@ -55,6 +59,29 @@ slots, and lets you admit part of a group now and the rest later.
 - Make sure the right event is selected in the top bar.
 - If a guest's phone is dead, go to **Tickets**, search by name or phone, open the ticket, and check them in.
 - Admitted someone by mistake? Open the ticket and press **Undo** in its check-in history.
+
+## Ticket prices
+Owners set a price **per person** for Regular, VIP and Table at the top of **Events** (or **More → Ticket prices**).
+On the new-ticket screen each type shows its price; tap a type and a number of people (Single, 5-man, 10-man,
+100-man…) and the amount is worked out (e.g. 10-man Regular at ₦5,000 = ₦50,000). You can still type a
+different amount for a discount. A new event copies the prices from the latest event.
+
+The amount paid is printed on the ticket and the downloadable ticket image (hidden when it's ₦0).
+
+## Upgrading a ticket
+Owners and admins open a ticket and press **Upgrade** to add more people and/or move it to a better type
+(e.g. Regular → VIP). The extra amount fills in from the price list: new people at the new price, plus the
+price difference for people already on the ticket if the type changes. The QR code and link stay the same,
+so the guest's ticket updates automatically. Every upgrade is logged on the ticket with who did it and how much.
+
+## Picking contacts
+On the new-ticket screen, the buyer's name box searches as you type and fills in the WhatsApp number:
+- **Past buyers**: anyone who bought a ticket before (any event).
+- **Imported contacts**: tap **Import contacts file** once and choose a `.vcf` export
+  (iPhone: Contacts → Lists → long-press All Contacts → Export; Google: contacts.google.com → Export → vCard).
+  They're kept only in that browser on that device.
+- **Android Chrome** also shows **Choose from phone contacts**, which opens the phone's contact list directly.
+  This needs the site on https (e.g. the Vercel link). iPhones and computers don't allow it.
 
 ## Branding
 Owners go to **Branding** (or **More → Branding** on a phone) to upload a logo and a flyer/banner (PNG or JPG,

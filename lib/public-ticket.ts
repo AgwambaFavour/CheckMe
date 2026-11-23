@@ -8,6 +8,8 @@ export type PublicTicket = {
   buyer_name: string;
   tier: string;
   slots: number;
+  /** Total paid for the ticket, in whole naira. Shown on the ticket; 0 hides it. */
+  amount_paid: number;
   status: "active" | "void";
   event_name: string;
   starts_at: string | null;
@@ -18,13 +20,13 @@ export type PublicTicket = {
   banner_url: string | null;
 };
 
-/** Only the fields that are safe to show to anyone holding the link (no amount paid, no phone). */
+/** Only the fields that are safe to show to anyone holding the link (no phone number). */
 export const getPublicTicket = cache(async (rawCode: string): Promise<PublicTicket | null> => {
   const code = rawCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (!code) return null;
   const { data } = await db()
     .from("tickets")
-    .select("code, buyer_name, tier, slots, status, events(name, starts_at, venue, brand_color, logo_url, banner_url), organizations(name)")
+    .select("code, buyer_name, tier, slots, amount_paid, status, events(name, starts_at, venue, brand_color, logo_url, banner_url), organizations(name)")
     .eq("code", code)
     .maybeSingle();
   if (!data) return null;
@@ -42,6 +44,7 @@ export const getPublicTicket = cache(async (rawCode: string): Promise<PublicTick
     buyer_name: data.buyer_name,
     tier: data.tier,
     slots: data.slots,
+    amount_paid: Number(data.amount_paid) || 0,
     status: data.status,
     event_name: ev?.name ?? "",
     starts_at: ev?.starts_at ?? null,

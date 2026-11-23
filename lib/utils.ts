@@ -1,5 +1,32 @@
 export const TIERS = ["Regular", "VIP", "Table"] as const;
 
+export type Role = "owner" | "admin" | "scanner";
+
+export const ROLES: { value: Role; label: string; desc: string }[] = [
+  { value: "owner", label: "Owner", desc: "Everything, plus events, prices, branding & team" },
+  { value: "admin", label: "Admin", desc: "Create, edit & void tickets, and scan" },
+  { value: "scanner", label: "Scanner", desc: "Scan tickets & check guests in only" },
+];
+
+export function parseRole(value: unknown): Role {
+  return value === "owner" || value === "scanner" ? value : "admin";
+}
+
+export function roleLabel(role: string) {
+  return ROLES.find((r) => r.value === role)?.label ?? role;
+}
+
+/** Read the per-person price list for an event, keeping only valid tiers and amounts. */
+export function cleanPrices(raw: unknown): Partial<Record<(typeof TIERS)[number], number>> {
+  const out: Partial<Record<(typeof TIERS)[number], number>> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const tier of TIERS) {
+    const v = (raw as Record<string, unknown>)[tier];
+    if (typeof v === "number" && Number.isInteger(v) && v > 0) out[tier] = v;
+  }
+  return out;
+}
+
 const naira = new Intl.NumberFormat("en-NG", {
   style: "currency",
   currency: "NGN",

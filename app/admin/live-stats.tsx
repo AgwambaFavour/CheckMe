@@ -63,11 +63,11 @@ export function LiveStats({
         <div className="mt-1.5 text-xs text-muted">{pct}% of ticketed guests have arrived</div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 ${stats.revenue === null ? "sm:grid-cols-3" : "sm:grid-cols-4"}`}>
         <Stat label="Still to arrive" value={toArrive} />
         <Stat label="Tickets generated" value={stats.tickets} />
         <Stat label="People ticketed" value={stats.slots} hint={capacity ? `of ${capacity} capacity` : undefined} />
-        <Stat label="Revenue" value={formatNaira(stats.revenue)} />
+        {stats.revenue !== null && <Stat label="Revenue" value={formatNaira(stats.revenue)} />}
       </div>
 
       {stats.by_tier.length > 0 && (

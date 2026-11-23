@@ -8,10 +8,12 @@ import {
   EVENT_COOKIE,
   getCurrentEvent,
   newTicketCode,
+  canManageTickets,
   requireOwner,
   requireStaff,
+  requireTicketManager,
 } from "@/lib/auth";
-import { normalizePhone, parseNames, TIERS } from "@/lib/utils";
+import { normalizePhone, parseNames, parseRole, TIERS } from "@/lib/utils";
 import type { FormState } from "./auth";
 
 // ───────────────────────── Events (owner) ─────────────────────────
@@ -25,18 +27,23 @@ function readEventForm(formData: FormData) {
   const capRaw = String(formData.get("capacity") ?? "").trim();
   const capacity = capRaw ? Math.max(1, parseInt(capRaw, 10) || 0) || null : null;
   const whatsapp_template = String(formData.get("whatsapp_template") ?? "").trim();
-  return { name, venue, starts_at, capacity, whatsapp_template };
+  const tier_prices: Record<string, number> = {};
+  for (const tier of TIERS) {
+    const n = parseInt(String(formData.get(`price_${tier}`) ?? "").replace(/[^\d]/g, ""), 10);
+    if (Number.isInteger(n) && n > 0) tier_prices[tier] = n;
+  }
+  return { name, venue, starts_at, capacity, whatsapp_template, tier_prices };
 }
 
 export async function createEvent(_: FormState, formData: FormData): Promise<FormState> {
   const me = await requireOwner();
   const fields = readEventForm(formData);
   if (!fields.name) return { error: "Give the event a name." };
-  const { whatsapp_template, ...rest } = fields;
-  // New events start with the branding + message of the most recent event.
+  const { whatsapp_template, tier_prices, ...rest } = fields;
+  // New events start with the branding, message and prices of the most recent event.
   const { data: prev } = await db()
     .from("events")
-    .select("brand_color, logo_url, banner_url, whatsapp_template")
+    .select("brand_color, logo_url, banner_url, whatsapp_template, tier_prices")
     .eq("org_id", me.org_id)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -47,6 +54,7 @@ export async function createEvent(_: FormState, formData: FormData): Promise<For
       ...(prev ?? {}),
       ...rest,
       ...(whatsapp_template ? { whatsapp_template } : {}),
+      ...(Object.keys(tier_prices).length > 0 ? { tier_prices } : {}),
       org_id: me.org_id,
     })
     .select("id")
@@ -65,10 +73,29 @@ export async function updateEvent(_: FormState, formData: FormData): Promise<For
   if (!fields.whatsapp_template) return { error: "WhatsApp message can't be empty." };
   if (!fields.whatsapp_template.includes("{link}"))
     return { error: "WhatsApp message must include {link} so the guest gets their ticket." };
-  const { error } = await db().from("events").update(fields).eq("id", id).eq("org_id", me.org_id);
+  // Prices have their own form (setTicketPrices).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { tier_prices, ...details } = fields;
+  const { error } = await db().from("events").update(details).eq("id", id).eq("org_id", me.org_id);
   if (error) return { error: error.message };
   revalidatePath("/admin", "layout");
   return { ok: "Saved." };
+}
+
+/** Price per person for Regular / VIP / Table on one event. Empty means "no price". */
+export async function setTicketPrices(_: FormState, formData: FormData): Promise<FormState> {
+  const me = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const { tier_prices } = readEventForm(formData);
+  const { error } = await db().from("events").update({ tier_prices }).eq("id", id).eq("org_id", me.org_id);
+  if (error) {
+    if (error.message.includes("tier_prices"))
+      return { error: "Your database needs a one-time update before prices can be saved (see the note above)." };
+    return { error: error.message };
+  }
+  revalidatePath("/admin", "layout");
+  const set = TIERS.filter((t) => tier_prices[t]).length;
+  return { ok: set ? "Prices saved. New tickets will work out the amount automatically." : "Prices cleared." };
 }
 
 // ───────────────────────── Branding (owner) ─────────────────────────
@@ -151,7 +178,7 @@ function validateTicket(t: ReturnType<typeof readTicketForm>): string | null {
 }
 
 export async function createTicket(_: FormState, formData: FormData): Promise<FormState> {
-  const me = await requireStaff();
+  const me = await requireTicketManager();
   const event = await getCurrentEvent(me.org_id);
   if (!event) return { error: "Create an event first." };
   const fields = readTicketForm(formData);
@@ -176,12 +203,13 @@ export async function createTicket(_: FormState, formData: FormData): Promise<Fo
     else if (error && error.code !== "23505") return { error: error.message }; // 23505 = code collision, retry
   }
   if (!ticketId) return { error: "Could not generate a ticket code. Try again." };
+
   revalidatePath("/admin", "layout");
   redirect(`/admin/tickets/${ticketId}?new=1`);
 }
 
 export async function updateTicket(_: FormState, formData: FormData): Promise<FormState> {
-  const me = await requireStaff();
+  const me = await requireTicketManager();
   const id = String(formData.get("id") ?? "");
   const fields = readTicketForm(formData);
   const invalid = validateTicket(fields);
@@ -208,7 +236,7 @@ export async function updateTicket(_: FormState, formData: FormData): Promise<Fo
 }
 
 export async function setTicketStatus(formData: FormData) {
-  const me = await requireStaff();
+  const me = await requireTicketManager();
   const id = String(formData.get("id") ?? "");
   const status = formData.get("status") === "void" ? "void" : "active";
   await db()
@@ -217,6 +245,88 @@ export async function setTicketStatus(formData: FormData) {
     .eq("id", id)
     .eq("org_id", me.org_id);
   revalidatePath("/admin", "layout");
+}
+
+/** People who bought tickets before (any event), matched by name or number, newest first. */
+export async function searchBuyers(q: string): Promise<{ name: string; phone: string }[]> {
+  const me = await requireTicketManager();
+  const query = q.trim();
+  if (query.length < 2) return [];
+  const safe = query.replace(/[%,()*]/g, " ");
+  const digits = query.replace(/\D/g, "");
+  const ors = [`buyer_name.ilike.*${safe}*`];
+  if (digits.length >= 4) ors.push(`buyer_phone.ilike.*${digits.replace(/^0/, "")}*`);
+  const { data } = await db()
+    .from("tickets")
+    .select("buyer_name, buyer_phone")
+    .eq("org_id", me.org_id)
+    .or(ors.join(","))
+    .order("created_at", { ascending: false })
+    .limit(40);
+  const seen = new Set<string>();
+  const out: { name: string; phone: string }[] = [];
+  for (const r of data ?? []) {
+    if (seen.has(r.buyer_phone)) continue;
+    seen.add(r.buyer_phone);
+    out.push({ name: r.buyer_name, phone: r.buyer_phone });
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
+/** Add people to a ticket and/or move it to a better type, adding what they paid on top. */
+export async function upgradeTicket(_: FormState, formData: FormData): Promise<FormState> {
+  const me = await requireTicketManager();
+  const id = String(formData.get("id") ?? "");
+  const added = parseInt(String(formData.get("added_slots") ?? "0"), 10) || 0;
+  const tierRaw = String(formData.get("tier") ?? "");
+  const extra = parseInt(String(formData.get("extra_amount") ?? "").replace(/[^\d]/g, ""), 10);
+
+  const { data: t } = await db()
+    .from("tickets")
+    .select("id, slots, tier, amount_paid, status")
+    .eq("id", id)
+    .eq("org_id", me.org_id)
+    .maybeSingle();
+  if (!t) return { error: "Ticket not found." };
+  if (t.status === "void") return { error: "This ticket is voided. Restore it before upgrading." };
+
+  const tier = (TIERS as readonly string[]).includes(tierRaw) ? tierRaw : t.tier;
+  if (added < 0) return { error: "You can only add people here. Use Edit to correct a mistake." };
+  if (added === 0 && tier === t.tier) return { error: "Add at least one person or pick a different ticket type." };
+  if (t.slots + added > 10000) return { error: "That's a lot of slots — check the number." };
+  if (!Number.isInteger(extra) || extra < 0) return { error: "Enter the extra amount paid (₦). Use 0 if it's free." };
+
+  // Only apply if nobody changed the ticket since we read it (two admins upgrading at once).
+  const { data: updated, error } = await db()
+    .from("tickets")
+    .update({
+      slots: t.slots + added,
+      tier,
+      amount_paid: Number(t.amount_paid) + extra,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", t.id)
+    .eq("org_id", me.org_id)
+    .eq("slots", t.slots)
+    .eq("tier", t.tier)
+    .eq("amount_paid", t.amount_paid)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!updated?.length) return { error: "Someone else just changed this ticket. Reload and try again." };
+
+  await db().from("ticket_upgrades").insert({
+    ticket_id: t.id,
+    org_id: me.org_id,
+    added_slots: added,
+    from_tier: t.tier,
+    to_tier: tier,
+    extra_amount: extra,
+    by_id: me.id,
+    by_name: me.full_name,
+  });
+  revalidatePath("/admin", "layout");
+  redirect(`/admin/tickets/${t.id}?upgraded=1`);
 }
 
 // ───────────────────────── Check-in ─────────────────────────
@@ -337,10 +447,12 @@ export async function getStats() {
   const event = await getCurrentEvent(me.org_id);
   if (!event) return null;
   const { data } = await db().rpc("event_stats", { p_event_id: event.id });
+  // Scanners don't see money.
+  if (data && !canManageTickets(me)) data.revenue = null;
   return data as {
     tickets: number;
     slots: number;
-    revenue: number;
+    revenue: number | null;
     admitted: number;
     voided: number;
     by_tier: { tier: string; tickets: number; slots: number; admitted: number }[];
@@ -354,7 +466,7 @@ export async function addStaff(_: FormState, formData: FormData): Promise<FormSt
   const full_name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const role = formData.get("role") === "owner" ? "owner" : "admin";
+  const role = parseRole(formData.get("role"));
   if (!full_name || !email) return { error: "Enter a name and email." };
   if (password.length < 8) return { error: "Temporary password must be at least 8 characters." };
 
@@ -396,7 +508,7 @@ export async function removeStaff(formData: FormData) {
 export async function setStaffRole(formData: FormData) {
   const me = await requireOwner();
   const id = String(formData.get("id") ?? "");
-  const role = formData.get("role") === "owner" ? "owner" : "admin";
+  const role = parseRole(formData.get("role"));
   if (id === me.id) return; // don't demote yourself by accident
   await db().from("profiles").update({ role }).eq("id", id).eq("org_id", me.org_id);
   revalidatePath("/admin/team");

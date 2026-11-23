@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { getCurrentEvent, requireStaff } from "@/lib/auth";
+import { getCurrentEvent, requireTicketManager } from "@/lib/auth";
+import { cleanPrices } from "@/lib/utils";
 import { TicketForm } from "../ticket-form";
 
 export default async function NewTicketPage() {
-  const me = await requireStaff();
+  const me = await requireTicketManager();
   const event = await getCurrentEvent(me.org_id);
   if (!event) {
     return (
@@ -19,7 +20,10 @@ export default async function NewTicketPage() {
       <p className="mb-5 text-sm text-muted">
         For <span className="text-ink">{event.name}</span>. Only create it after the bank transfer is confirmed.
       </p>
-      <TicketForm />
+      <TicketForm
+        prices={cleanPrices(event.tier_prices)}
+        pricesHref={me.role === "owner" ? "/admin/events#prices" : undefined}
+      />
     </div>
   );
 }

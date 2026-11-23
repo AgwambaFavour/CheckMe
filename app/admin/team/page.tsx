@@ -1,8 +1,10 @@
 import { requireOwner } from "@/lib/auth";
 import { db } from "@/lib/supabase/server";
 import { removeStaff, setStaffRole } from "@/app/actions/admin";
-import { ConfirmButton } from "@/components/forms";
 import { AddStaffForm } from "./add-staff-form";
+import { ConfirmButton } from "@/components/forms";
+import { RoleSelect } from "./role-select";
+import { roleLabel } from "@/lib/utils";
 
 export default async function TeamPage() {
   const me = await requireOwner();
@@ -17,7 +19,8 @@ export default async function TeamPage() {
       <section>
         <h1 className="text-xl font-bold">Team</h1>
         <p className="mb-3 text-sm text-muted">
-          <b>Owners</b> manage events and the team. <b>Admins</b> create tickets and scan at the gate.
+          <b>Owners</b> manage events, prices and the team. <b>Admins</b> create tickets and scan at the gate.{" "}
+          <b>Scanners</b> only scan tickets and check guests in.
         </p>
         <ul className="space-y-2">
           {(staff ?? []).map((s) => (
@@ -28,21 +31,11 @@ export default async function TeamPage() {
                 </div>
                 <div className="truncate text-xs text-muted">{s.email}</div>
               </div>
-              <span className={`pill ${s.role === "owner" ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted"}`}>
-                {s.role}
-              </span>
-              {s.id !== me.id && (
+              {s.id === me.id ? (
+                <span className="pill bg-accent text-accent-ink">{roleLabel(s.role)}</span>
+              ) : (
                 <div className="flex gap-2">
-                  <form action={setStaffRole}>
-                    <input type="hidden" name="id" value={s.id} />
-                    <input type="hidden" name="role" value={s.role === "owner" ? "admin" : "owner"} />
-                    <ConfirmButton
-                      message={s.role === "owner" ? `Make ${s.full_name} a regular admin?` : `Make ${s.full_name} an owner? They'll be able to manage events and the team.`}
-                      className="btn-secondary px-3 py-1.5 text-xs"
-                    >
-                      {s.role === "owner" ? "Make admin" : "Make owner"}
-                    </ConfirmButton>
-                  </form>
+                  <RoleSelect id={s.id} name={s.full_name} role={s.role} action={setStaffRole} />
                   <form action={removeStaff}>
                     <input type="hidden" name="id" value={s.id} />
                     <ConfirmButton message={`Remove ${s.full_name}? They will no longer be able to log in.`} className="btn-danger px-3 py-1.5 text-xs">

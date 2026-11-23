@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { getCurrentEvent, requireStaff, siteUrl } from "@/lib/auth";
+import { canManageTickets, getCurrentEvent, requireStaff, siteUrl } from "@/lib/auth";
 import { db } from "@/lib/supabase/server";
 import { lookupTicket, setTicketStatus, undoCheckin } from "@/app/actions/admin";
 import { formatNaira, formatPhone, formatTime, whatsappLink } from "@/lib/utils";
@@ -11,8 +11,11 @@ import { CopyButton, TicketCheckin } from "./client";
 
 export default async function TicketDetail({ params, searchParams }: PageProps<"/admin/tickets/[id]">) {
   const { id } = await params;
-  const isNew = (await searchParams).new === "1";
+  const sp = await searchParams;
+  const isNew = sp.new === "1";
+  const isUpgraded = sp.upgraded === "1";
   const me = await requireStaff();
+  const canManage = canManageTickets(me);
 
   const { data: t } = await db()
     .from("ticket_summary")
@@ -22,7 +25,7 @@ export default async function TicketDetail({ params, searchParams }: PageProps<"
     .maybeSingle();
   if (!t) notFound();
 
-  const [{ data: event }, { data: history }, lookup, current] = await Promise.all([
+  const [{ data: event }, { data: history }, lookup, current, { data: upgrades }] = await Promise.all([
     db().from("events").select("id, name, whatsapp_template").eq("id", t.event_id).single(),
     db()
       .from("checkins")
@@ -31,6 +34,13 @@ export default async function TicketDetail({ params, searchParams }: PageProps<"
       .order("created_at", { ascending: false }),
     lookupTicket(t.code),
     getCurrentEvent(me.org_id),
+    canManage
+      ? db()
+          .from("ticket_upgrades")
+          .select("id, added_slots, from_tier, to_tier, extra_amount, by_name, created_at")
+          .eq("ticket_id", t.id)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: null }),
   ]);
 
   const link = `${await siteUrl()}/t/${t.code}`;
@@ -50,6 +60,15 @@ export default async function TicketDetail({ params, searchParams }: PageProps<"
         <div className="rounded-2xl border border-ok/50 bg-ok/10 p-4">
           <div className="font-semibold text-ok">✓ Ticket generated</div>
           <div className="text-sm text-muted">Now send it to {t.buyer_name} on WhatsApp.</div>
+        </div>
+      )}
+
+      {isUpgraded && (
+        <div className="rounded-2xl border border-ok/50 bg-ok/10 p-4">
+          <div className="font-semibold text-ok">✓ Ticket upgraded</div>
+          <div className="text-sm text-muted">
+            Same QR code and link, now for {t.slots} {t.slots === 1 ? "person" : "people"}. Send {t.buyer_name} the updated ticket.
+          </div>
         </div>
       )}
 
@@ -76,7 +95,7 @@ export default async function TicketDetail({ params, searchParams }: PageProps<"
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
           <Item label="WhatsApp" value={formatPhone(t.buyer_phone)} />
-          <Item label="Amount paid" value={formatNaira(t.amount_paid)} />
+          {canManage && <Item label="Amount paid" value={formatNaira(t.amount_paid)} />}
           <Item label="Code" value={<span className="font-mono">{t.code}</span>} />
           <Item label="Created" value={`${formatTime(t.created_at)}${t.created_by_name ? ` · ${t.created_by_name}` : ""}`} />
         </dl>
@@ -88,7 +107,7 @@ export default async function TicketDetail({ params, searchParams }: PageProps<"
         )}
       </div>
 
-      {!isVoid && (
+      {canManage && !isVoid && (
         <div className="space-y-2">
           <a href={waHref} target="_blank" rel="noopener noreferrer" className="btn-whatsapp w-full py-4 text-base">
             <WhatsAppIcon /> Send on WhatsApp
@@ -105,6 +124,30 @@ export default async function TicketDetail({ params, searchParams }: PageProps<"
         <div className="card">
           <h2 className="mb-3 font-semibold">Check in</h2>
           <TicketCheckin data={lookup} />
+        </div>
+      )}
+
+      {upgrades && upgrades.length > 0 && (
+        <div className="card">
+          <h2 className="mb-2 font-semibold">Upgrades</h2>
+          <ul className="divide-y divide-line text-sm">
+            {upgrades.map((u) => (
+              <li key={u.id} className="py-2.5">
+                <div>
+                  {[
+                    u.added_slots > 0 && `+${u.added_slots} ${u.added_slots === 1 ? "person" : "people"}`,
+                    u.from_tier !== u.to_tier && `${u.from_tier} → ${u.to_tier}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}{" "}
+                  <span className="text-muted">for</span> <b>{formatNaira(u.extra_amount)}</b>
+                </div>
+                <div className="text-xs text-muted">
+                  {formatTime(u.created_at)} · {u.by_name ?? "—"}
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -137,7 +180,11 @@ export default async function TicketDetail({ params, searchParams }: PageProps<"
         </div>
       )}
 
+      {canManage && (
       <div className="flex gap-2">
+        {!isVoid && (
+          <Link href={`/admin/tickets/${t.id}/upgrade`} className="btn-primary flex-1">Upgrade</Link>
+        )}
         <Link href={`/admin/tickets/${t.id}/edit`} className="btn-secondary flex-1">Edit</Link>
         <form action={setTicketStatus} className="flex-1">
           <input type="hidden" name="id" value={t.id} />
@@ -151,6 +198,7 @@ export default async function TicketDetail({ params, searchParams }: PageProps<"
           )}
         </form>
       </div>
+      )}
     </div>
   );
 }

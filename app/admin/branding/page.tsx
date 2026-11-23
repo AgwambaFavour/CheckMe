@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { db } from "@/lib/supabase/server";
 import { getCurrentEvent, requireOwner } from "@/lib/auth";
 import type { PublicTicket } from "@/lib/public-ticket";
+import { cleanPrices } from "@/lib/utils";
 import { BrandingForm } from "../events/branding-form";
 
 export default async function BrandingPage() {
@@ -22,6 +23,7 @@ export default async function BrandingPage() {
     buyer_name: "Ada Obi",
     tier: "VIP",
     slots: 5,
+    amount_paid: (cleanPrices(event.tier_prices).VIP ?? 20000) * 5,
     status: "active",
     event_name: event.name,
     starts_at: event.starts_at,

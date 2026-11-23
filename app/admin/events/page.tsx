@@ -1,6 +1,7 @@
 import { getCurrentEvent, listEvents, requireOwner } from "@/lib/auth";
-import { formatDateTime } from "@/lib/utils";
+import { cleanPrices, formatDateTime } from "@/lib/utils";
 import { EventForm } from "./event-form";
+import { PricesForm } from "./prices-form";
 
 function toLagosInput(iso: string | null) {
   if (!iso) return "";
@@ -15,8 +16,23 @@ export default async function EventsPage() {
   return (
     <div className="mx-auto max-w-lg space-y-6">
       {current && (
+        <section id="prices" className="scroll-mt-28">
+          <h1 className="text-xl font-bold">Ticket prices</h1>
+          <p className="mb-3 text-sm text-muted">For {current.name}.</p>
+          {current.tier_prices === undefined && (
+            <div className="mb-3 rounded-xl border border-warn/50 bg-warn/10 px-3.5 py-3 text-sm text-warn">
+              <b>One-time database update needed.</b> In Supabase, open SQL Editor → New query, paste the contents of{" "}
+              <code>supabase/003_scanner_and_prices.sql</code> and <code>supabase/004_ticket_upgrades.sql</code>, and
+              click Run. Then reload this page.
+            </div>
+          )}
+          <PricesForm key={current.id} eventId={current.id} prices={cleanPrices(current.tier_prices)} />
+        </section>
+      )}
+
+      {current && (
         <section>
-          <h1 className="text-xl font-bold">Current event</h1>
+          <h2 className="text-xl font-bold">Event details</h2>
           <p className="mb-3 text-sm text-muted">Edit details and the WhatsApp message for {current.name}.</p>
           <EventForm
             key={current.id}

@@ -1,11 +1,14 @@
 import Link from "next/link";
-import { getCurrentEvent, listEvents, requireStaff } from "@/lib/auth";
+import { canManageTickets, getCurrentEvent, listEvents, requireStaff } from "@/lib/auth";
+import { roleLabel } from "@/lib/utils";
 import { signOut } from "@/app/actions/auth";
 import { AdminNav, EventSwitcher } from "./nav";
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const me = await requireStaff();
   const [events, current] = await Promise.all([listEvents(me.org_id), getCurrentEvent(me.org_id)]);
+  const isOwner = me.role === "owner";
+  const canManage = canManageTickets(me);
 
   return (
     <div className="min-h-dvh pb-24 sm:pb-8">
@@ -30,21 +33,21 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
           </div>
           <div className="hidden text-right text-xs sm:block">
             <div className="font-medium">{me.full_name}</div>
-            <div className="text-muted capitalize">{me.role}</div>
+            <div className="text-muted">{roleLabel(me.role)}</div>
           </div>
           <form action={signOut}>
             <button className="btn-secondary px-3 py-2 text-xs">Log out</button>
           </form>
         </div>
         <div className="mx-auto hidden max-w-5xl px-4 pb-2 sm:block">
-          <AdminNav isOwner={me.role === "owner"} variant="top" />
+          <AdminNav isOwner={isOwner} canManage={canManage} variant="top" />
         </div>
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-5">{children}</main>
 
       <nav className="no-print fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
-        <AdminNav isOwner={me.role === "owner"} variant="bottom" />
+        <AdminNav isOwner={isOwner} canManage={canManage} variant="bottom" />
       </nav>
     </div>
   );

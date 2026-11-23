@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getCurrentEvent, requireStaff, siteUrl } from "@/lib/auth";
+import { canManageTickets, getCurrentEvent, requireStaff, siteUrl } from "@/lib/auth";
 import { db } from "@/lib/supabase/server";
 import { formatNaira, formatPhone, whatsappLink } from "@/lib/utils";
 import { TierPill, WhatsAppIcon } from "@/components/ui";
@@ -33,6 +33,7 @@ export default async function TicketsPage({ searchParams }: PageProps<"/admin/ti
   const me = await requireStaff();
   const event = await getCurrentEvent(me.org_id);
   if (!event) return <div className="card text-sm text-muted">No event yet.</div>;
+  const canManage = canManageTickets(me);
 
   let query = db()
     .from("ticket_summary")
@@ -65,7 +66,7 @@ export default async function TicketsPage({ searchParams }: PageProps<"/admin/ti
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold">Tickets</h1>
-        <Link href="/admin/tickets/new" className="btn-primary px-3 py-2">+ New</Link>
+        {canManage && <Link href="/admin/tickets/new" className="btn-primary px-3 py-2">+ New</Link>}
       </div>
 
       <form className="flex gap-2">
@@ -96,7 +97,7 @@ export default async function TicketsPage({ searchParams }: PageProps<"/admin/ti
 
       {rows.length === 0 ? (
         <div className="card text-center text-sm text-muted">
-          {q || filter !== "all" ? "No tickets match." : "No tickets yet. Create the first one."}
+          {q || filter !== "all" ? "No tickets match." : canManage ? "No tickets yet. Create the first one." : "No tickets yet."}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -109,7 +110,7 @@ export default async function TicketsPage({ searchParams }: PageProps<"/admin/ti
                   {t.status === "void" && <span className="pill bg-danger/15 text-danger">Void</span>}
                 </div>
                 <div className="mt-0.5 text-xs text-muted">
-                  {formatPhone(t.buyer_phone)} · {formatNaira(t.amount_paid)} · <span className="font-mono">{t.code}</span>
+                  {formatPhone(t.buyer_phone)} · {canManage && <>{formatNaira(t.amount_paid)} · </>}<span className="font-mono">{t.code}</span>
                 </div>
               </Link>
               <div className="text-right">
@@ -118,7 +119,7 @@ export default async function TicketsPage({ searchParams }: PageProps<"/admin/ti
                 </div>
                 <div className="text-[11px] text-muted">in</div>
               </div>
-              {t.status === "active" && (
+              {canManage && t.status === "active" && (
                 <a
                   href={whatsappLink(
                     event.whatsapp_template,

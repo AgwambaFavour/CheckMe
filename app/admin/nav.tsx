@@ -42,8 +42,18 @@ const ITEMS = [
   { href: "/admin/more", label: "More", icon: "⋯" },
 ];
 
-export function AdminNav({ isOwner, variant }: { isOwner: boolean; variant: "top" | "bottom" }) {
+export function AdminNav({
+  isOwner,
+  canManage,
+  variant,
+}: {
+  isOwner: boolean;
+  /** False for scanners: no "New ticket". */
+  canManage: boolean;
+  variant: "top" | "bottom";
+}) {
   const pathname = usePathname();
+  const items = canManage ? ITEMS : ITEMS.filter((i) => !i.primary);
   const isActive = (href: string, exact?: boolean) =>
     exact
       ? pathname === href
@@ -53,7 +63,7 @@ export function AdminNav({ isOwner, variant }: { isOwner: boolean; variant: "top
 
   if (variant === "top") {
     const top = [
-      ...ITEMS.filter((i) => i.href !== "/admin/more"),
+      ...items.filter((i) => i.href !== "/admin/more"),
       ...(isOwner
         ? [
             { href: "/admin/events", label: "Events", icon: "" },
@@ -83,8 +93,8 @@ export function AdminNav({ isOwner, variant }: { isOwner: boolean; variant: "top
   }
 
   return (
-    <div className="grid grid-cols-5">
-      {ITEMS.map((i) => {
+    <div className={`grid ${canManage ? "grid-cols-5" : "grid-cols-4"}`}>
+      {items.map((i) => {
         const active =
           i.href === "/admin/more"
             ? ["/admin/more", "/admin/events", "/admin/branding", "/admin/team", "/admin/account"].some((p) =>

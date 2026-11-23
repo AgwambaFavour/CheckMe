@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import QRCode from "qrcode";
 import { siteUrl } from "@/lib/auth";
 import { getPublicTicket } from "@/lib/public-ticket";
-import { formatDateTime, inkFor } from "@/lib/utils";
+import { formatDateTime, formatNaira, inkFor } from "@/lib/utils";
 import { ticketFonts } from "@/lib/og-fonts";
 
 /** Fetch a brand image and inline it, so a broken/missing file never breaks the ticket. */
@@ -68,6 +68,9 @@ export async function GET(_req: Request, ctx: RouteContext<"/t/[code]/image">) {
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
                 <div style={{ display: "flex", background: "#0b0b0f", color: "#fff", fontSize: 30, fontWeight: 700, padding: "8px 22px", borderRadius: 14 }}>{t.tier}</div>
                 <div style={{ fontSize: 30, color: "#0b0b0f", marginTop: 10 }}>{`Admits ${t.slots}`}</div>
+                {t.amount_paid > 0 && (
+                  <div style={{ fontSize: 26, fontWeight: 700, color: "#525252", marginTop: 4 }}>{`${formatNaira(t.amount_paid)} paid`}</div>
+                )}
               </div>
             </div>
 

@@ -4,13 +4,16 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomInt } from "crypto";
 import { createAuthClient, db } from "@/lib/supabase/server";
+import type { Role } from "@/lib/utils";
+
+export type { Role };
 
 export type Profile = {
   id: string;
   org_id: string;
   full_name: string;
   email: string;
-  role: "owner" | "admin";
+  role: Role;
   /** True once this person has clicked a link emailed to them (proves they own the address). */
   emailVerified: boolean;
 };
@@ -26,6 +29,7 @@ export type EventRow = {
   brand_color: string;
   logo_url: string | null;
   banner_url: string | null;
+  tier_prices: Record<string, number> | null;
   created_at: string;
 };
 
@@ -66,6 +70,17 @@ export async function markEmailVerified(user: { id: string; app_metadata?: Recor
 export async function requireOwner() {
   const profile = await requireStaff();
   if (profile.role !== "owner") redirect("/admin");
+  return profile;
+}
+
+/** Owners and admins create, edit and void tickets. Scanners only check guests in. */
+export function canManageTickets(profile: Pick<Profile, "role">) {
+  return profile.role === "owner" || profile.role === "admin";
+}
+
+export async function requireTicketManager() {
+  const profile = await requireStaff();
+  if (!canManageTickets(profile)) redirect("/admin/scan");
   return profile;
 }
 

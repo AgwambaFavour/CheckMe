@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { addStaff } from "@/app/actions/admin";
 import { FormMessage, SubmitButton } from "@/components/forms";
+import { ROLES } from "@/lib/utils";
 
 export function AddStaffForm() {
   const [state, action] = useActionState(addStaff, undefined);
@@ -23,8 +24,11 @@ export function AddStaffForm() {
       <div>
         <label className="label" htmlFor="f-role">Role</label>
         <select id="f-role" name="role" defaultValue="admin" className="input">
-          <option value="admin">Admin: create tickets &amp; scan</option>
-          <option value="owner">Owner: also manage events &amp; team</option>
+          {ROLES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}: {r.desc}
+            </option>
+          ))}
         </select>
       </div>
       <FormMessage state={state} />

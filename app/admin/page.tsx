@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getCurrentEvent, requireStaff } from "@/lib/auth";
+import { canManageTickets, getCurrentEvent, requireStaff } from "@/lib/auth";
 import { getStats } from "@/app/actions/admin";
 import { formatDateTime } from "@/lib/utils";
 import { LiveStats } from "./live-stats";
@@ -35,10 +35,14 @@ export default async function Dashboard() {
         </p>
       </div>
       <LiveStats key={event.id} initial={stats} capacity={event.capacity} eventId={event.id} />
-      <div className="grid grid-cols-2 gap-3">
-        <Link href="/admin/scan" className="btn-primary py-4 text-base">⌖ Scan tickets</Link>
-        <Link href="/admin/tickets/new" className="btn-secondary py-4 text-base">+ New ticket</Link>
-      </div>
+      {canManageTickets(me) ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Link href="/admin/scan" className="btn-primary py-4 text-base">⌖ Scan tickets</Link>
+          <Link href="/admin/tickets/new" className="btn-secondary py-4 text-base">+ New ticket</Link>
+        </div>
+      ) : (
+        <Link href="/admin/scan" className="btn-primary w-full py-4 text-base">⌖ Scan tickets</Link>
+      )}
     </div>
   );
 }
