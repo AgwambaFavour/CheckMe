@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { db } from "@/lib/supabase/server";
+import { createAuthClient, db } from "@/lib/supabase/server";
 import {
   EVENT_COOKIE,
   getCurrentEvent,
@@ -98,9 +98,77 @@ export async function setTicketPrices(_: FormState, formData: FormData): Promise
   return { ok: set ? "Prices saved. New tickets will work out the amount automatically." : "Prices cleared." };
 }
 
+/**
+ * Permanently delete an event with all its tickets, check-ins and uploaded images.
+ * The owner must type the event's name to confirm.
+ */
+export async function deleteEvent(_: FormState, formData: FormData): Promise<FormState> {
+  const me = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const confirm = String(formData.get("confirm") ?? "").trim();
+  const { data: ev } = await db().from("events").select("id, name").eq("id", id).eq("org_id", me.org_id).maybeSingle();
+  if (!ev) return { error: "Event not found." };
+  if (confirm !== ev.name.trim()) return { error: `Type "${ev.name}" exactly to confirm.` };
+
+  const { error } = await db().from("events").delete().eq("id", ev.id).eq("org_id", me.org_id);
+  if (error) return { error: error.message };
+  await removeBrandFiles([`${me.org_id}/${ev.id}`]);
+
+  const jar = await cookies();
+  if (jar.get(EVENT_COOKIE)?.value === ev.id) jar.delete(EVENT_COOKIE);
+  revalidatePath("/admin", "layout");
+  redirect("/admin/events");
+}
+
+/**
+ * Permanently delete the whole organisation: every event, ticket and check-in,
+ * every team member's login, and all uploaded images. The owner must type the
+ * organisation's name to confirm.
+ */
+export async function deleteOrganization(_: FormState, formData: FormData): Promise<FormState> {
+  const me = await requireOwner();
+  const confirm = String(formData.get("confirm") ?? "").trim();
+  const admin = db();
+  const { data: org } = await admin.from("organizations").select("id, name").eq("id", me.org_id).maybeSingle();
+  if (!org) return { error: "Organisation not found." };
+  if (confirm !== org.name.trim()) return { error: `Type "${org.name}" exactly to confirm.` };
+
+  const [{ data: members }, { data: events }] = await Promise.all([
+    admin.from("profiles").select("id").eq("org_id", org.id),
+    admin.from("events").select("id").eq("org_id", org.id),
+  ]);
+
+  // Cascades to profiles, events, tickets, check-ins and upgrades.
+  const { error } = await admin.from("organizations").delete().eq("id", org.id);
+  if (error) return { error: error.message };
+
+  await removeBrandFiles((events ?? []).map((e) => `${org.id}/${e.id}`));
+  // Remove the logins too. Otherwise logging in again would quietly set up a fresh organisation.
+  // Delete everyone else first and the current user last.
+  const others = (members ?? []).map((m) => m.id).filter((id) => id !== me.id);
+  await Promise.all(others.map((id) => admin.auth.admin.deleteUser(id)));
+  await (await createAuthClient()).auth.signOut();
+  await admin.auth.admin.deleteUser(me.id);
+
+  (await cookies()).delete(EVENT_COOKIE);
+  redirect("/login?deleted=1");
+}
+
 // ───────────────────────── Branding (owner) ─────────────────────────
 
 const BRAND_BUCKET = "brand";
+
+/** Best effort: delete every uploaded file inside these storage folders. */
+async function removeBrandFiles(folders: string[]) {
+  const bucket = db().storage.from(BRAND_BUCKET);
+  await Promise.all(
+    folders.map(async (folder) => {
+      const { data } = await bucket.list(folder, { limit: 1000 });
+      const paths = (data ?? []).filter((f) => f.id).map((f) => `${folder}/${f.name}`);
+      if (paths.length) await bucket.remove(paths);
+    }),
+  );
+}
 const BRAND_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg" };
 type BrandKind = "logo" | "banner";
 

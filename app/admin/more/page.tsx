@@ -8,12 +8,16 @@ export default async function MorePage() {
     ...(me.role === "owner"
       ? [
           { href: "/admin/events#prices", title: "Ticket prices", desc: "Regular, VIP and Table price per person" },
-          { href: "/admin/events", title: "Events", desc: "Create events, edit details and the WhatsApp message" },
+          { href: "/admin/events", title: "Events", desc: "Create, edit or delete events and the WhatsApp message" },
           { href: "/admin/branding", title: "Branding", desc: "Logo, flyer and colours on the tickets" },
           { href: "/admin/team", title: "Team", desc: "Add or remove admins and scanners" },
         ]
       : []),
-    { href: "/admin/account", title: "My account", desc: "Change your password" },
+    {
+      href: "/admin/account",
+      title: "My account",
+      desc: me.role === "owner" ? "Change your password or delete your organisation" : "Change your password",
+    },
   ];
   return (
     <div className="space-y-3">

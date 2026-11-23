@@ -2,6 +2,8 @@ import { getCurrentEvent, listEvents, requireOwner } from "@/lib/auth";
 import { cleanPrices, formatDateTime } from "@/lib/utils";
 import { EventForm } from "./event-form";
 import { PricesForm } from "./prices-form";
+import { DeleteForm } from "@/components/delete-form";
+import { deleteEvent } from "@/app/actions/admin";
 
 function toLagosInput(iso: string | null) {
   if (!iso) return "";
@@ -69,6 +71,17 @@ export default async function EventsPage() {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {current && (
+        <section>
+          <h2 className="text-lg font-semibold text-danger">Delete this event</h2>
+          <p className="mb-3 text-sm text-muted">To delete a different event, select it at the top of the screen first.</p>
+          <DeleteForm key={current.id} action={deleteEvent} id={current.id} name={current.name} button="Delete event">
+            This permanently deletes <b className="text-ink">{current.name}</b> with all its tickets, check-ins and
+            uploaded images. Guests&apos; ticket links stop working. This can&apos;t be undone.
+          </DeleteForm>
         </section>
       )}
     </div>
