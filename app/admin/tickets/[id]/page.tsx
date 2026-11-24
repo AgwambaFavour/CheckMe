@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import QRCode from "qrcode";
 import { canManageTickets, getCurrentEvent, requireStaff, siteUrl } from "@/lib/auth";
 import { db } from "@/lib/supabase/server";
-import { lookupTicket, setTicketStatus, undoCheckin } from "@/app/actions/admin";
+import { deleteTicket, lookupTicket, setTicketStatus, undoCheckin } from "@/app/actions/admin";
 import { formatNaira, formatPhone, formatTime, whatsappLink } from "@/lib/utils";
 import { TierPill, WhatsAppIcon } from "@/components/ui";
 import { ConfirmButton } from "@/components/forms";
@@ -198,6 +198,18 @@ export default async function TicketDetail({ params, searchParams }: PageProps<"
           )}
         </form>
       </div>
+      )}
+
+      {canManage && (
+        <form action={deleteTicket}>
+          <input type="hidden" name="id" value={t.id} />
+          <ConfirmButton
+            message={`Delete ${t.buyer_name}'s ticket for good? Its QR code and check-in history are removed and it can't be restored. (To just block it at the gate, use Void instead.)`}
+            className="btn-danger w-full"
+          >
+            Delete ticket
+          </ConfirmButton>
+        </form>
       )}
     </div>
   );

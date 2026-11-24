@@ -98,26 +98,20 @@ export async function setTicketPrices(_: FormState, formData: FormData): Promise
   return { ok: set ? "Prices saved. New tickets will work out the amount automatically." : "Prices cleared." };
 }
 
-/**
- * Permanently delete an event with all its tickets, check-ins and uploaded images.
- * The owner must type the event's name to confirm.
- */
-export async function deleteEvent(_: FormState, formData: FormData): Promise<FormState> {
+/** Permanently delete one event (by id) with all its tickets, check-ins and uploaded images. Owners only. */
+export async function deleteEvent(formData: FormData) {
   const me = await requireOwner();
   const id = String(formData.get("id") ?? "");
-  const confirm = String(formData.get("confirm") ?? "").trim();
-  const { data: ev } = await db().from("events").select("id, name").eq("id", id).eq("org_id", me.org_id).maybeSingle();
-  if (!ev) return { error: "Event not found." };
-  if (confirm !== ev.name.trim()) return { error: `Type "${ev.name}" exactly to confirm.` };
+  const { data: ev } = await db().from("events").select("id").eq("id", id).eq("org_id", me.org_id).maybeSingle();
+  if (!ev) return;
 
   const { error } = await db().from("events").delete().eq("id", ev.id).eq("org_id", me.org_id);
-  if (error) return { error: error.message };
+  if (error) return;
   await removeBrandFiles([`${me.org_id}/${ev.id}`]);
 
   const jar = await cookies();
   if (jar.get(EVENT_COOKIE)?.value === ev.id) jar.delete(EVENT_COOKIE);
   revalidatePath("/admin", "layout");
-  redirect("/admin/events");
 }
 
 /**
@@ -313,6 +307,16 @@ export async function setTicketStatus(formData: FormData) {
     .eq("id", id)
     .eq("org_id", me.org_id);
   revalidatePath("/admin", "layout");
+}
+
+/** Permanently delete a ticket and its check-in history. Owners and admins. */
+export async function deleteTicket(formData: FormData) {
+  const me = await requireTicketManager();
+  const id = String(formData.get("id") ?? "");
+  const { error } = await db().from("tickets").delete().eq("id", id).eq("org_id", me.org_id);
+  if (error) return;
+  revalidatePath("/admin", "layout");
+  redirect("/admin/tickets");
 }
 
 /** People who bought tickets before (any event), matched by name or number, newest first. */

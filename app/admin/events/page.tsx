@@ -2,7 +2,8 @@ import { getCurrentEvent, listEvents, requireOwner } from "@/lib/auth";
 import { cleanPrices, formatDateTime } from "@/lib/utils";
 import { EventForm } from "./event-form";
 import { PricesForm } from "./prices-form";
-import { DeleteForm } from "@/components/delete-form";
+import { ConfirmButton } from "@/components/forms";
+import { db } from "@/lib/supabase/server";
 import { deleteEvent } from "@/app/actions/admin";
 
 function toLagosInput(iso: string | null) {
@@ -14,6 +15,13 @@ function toLagosInput(iso: string | null) {
 export default async function EventsPage() {
   const me = await requireOwner();
   const [events, current] = await Promise.all([listEvents(me.org_id), getCurrentEvent(me.org_id)]);
+  // Ticket count per event, so duplicate events can be told apart before deleting one.
+  const counts = await Promise.all(
+    events.map(async (e) => {
+      const { count } = await db().from("tickets").select("id", { count: "exact", head: true }).eq("event_id", e.id);
+      return count ?? 0;
+    }),
+  );
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
@@ -57,31 +65,40 @@ export default async function EventsPage() {
         <EventForm mode="create" />
       </section>
 
-      {events.length > 1 && (
+      {events.length > 0 && (
         <section>
-          <h2 className="mb-2 text-lg font-semibold">All events</h2>
+          <h2 className="text-lg font-semibold">All events</h2>
+          <p className="mb-2 text-sm text-muted">
+            Deleting an event also deletes all its tickets and check-ins. This can&apos;t be undone.
+          </p>
           <ul className="space-y-2">
-            {events.map((e) => (
-              <li key={e.id} className="card flex items-center justify-between p-3 text-sm">
-                <div>
-                  <div className="font-medium">{e.name}</div>
-                  <div className="text-xs text-muted">{formatDateTime(e.starts_at) || "No date"}</div>
-                </div>
-                {e.id === current?.id && <span className="pill bg-accent text-accent-ink">Selected</span>}
-              </li>
-            ))}
+            {events.map((e, i) => {
+              const label = `${e.name}${e.starts_at ? ` (${formatDateTime(e.starts_at)})` : ""}`;
+              const tickets = `${counts[i]} ticket${counts[i] === 1 ? "" : "s"}`;
+              return (
+                <li key={e.id} className="card flex items-center justify-between gap-3 p-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{e.name}</div>
+                    <div className="text-xs text-muted">
+                      {formatDateTime(e.starts_at) || "No date"} · {tickets} · created {formatDateTime(e.created_at)}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {e.id === current?.id && <span className="pill bg-accent text-accent-ink">Selected</span>}
+                    <form action={deleteEvent}>
+                      <input type="hidden" name="id" value={e.id} />
+                      <ConfirmButton
+                        message={`Delete "${label}" and its ${tickets}? This can't be undone.`}
+                        className="btn-danger px-3 py-1.5 text-xs"
+                      >
+                        Delete
+                      </ConfirmButton>
+                    </form>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
-        </section>
-      )}
-
-      {current && (
-        <section>
-          <h2 className="text-lg font-semibold text-danger">Delete this event</h2>
-          <p className="mb-3 text-sm text-muted">To delete a different event, select it at the top of the screen first.</p>
-          <DeleteForm key={current.id} action={deleteEvent} id={current.id} name={current.name} button="Delete event">
-            This permanently deletes <b className="text-ink">{current.name}</b> with all its tickets, check-ins and
-            uploaded images. Guests&apos; ticket links stop working. This can&apos;t be undone.
-          </DeleteForm>
         </section>
       )}
     </div>
